@@ -304,7 +304,7 @@ func main() {
 		for {
 			select {
 			case event := <-w.Event:
-				log.Println(event) // Print the event's info.
+				// log.Println(event) // Print the event's info.
 				// Check if the event is a create event
 				if event.Op == watcher.Create {
 					// Get the file info for the created file
