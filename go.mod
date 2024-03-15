@@ -1,4 +1,4 @@
-module main.go
+module multiple_extract
 
 go 1.22.0
 
