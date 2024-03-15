@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,7 +17,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/kjk/lzmadec"
 	"github.com/liamg/magic"
-	"github.com/mholt/archiver"
 	"github.com/radovskyb/watcher"
 )
 
@@ -220,6 +220,51 @@ func Extract_7z(path string, dstDir string) error {
 	}
 	return nil
 } // =========================================================================================================== Extract 7z
+func ExtractTarGz(path, dest string) error {
+	r, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dest, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			err = os.MkdirAll(target, os.FileMode(header.Mode))
+		case tar.TypeReg:
+			err = os.MkdirAll(filepath.Dir(target), os.ModeDir)
+			if err == nil {
+				out, err := os.Create(target)
+				if err == nil {
+					_, err = io.Copy(out, tr)
+					out.Close()
+				}
+			}
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+} // =========================================================================================================== Extract Tar
 func checkFileType(path string) string {
 	file, err := os.Open(path) // Open the file
 	if err != nil {
@@ -298,13 +343,13 @@ func extract(file string, dest string) {
 			color.Blue("[-] Extracted successfully")
 		}
 	case strings.Contains(contentType, "RAR archive"):
-		if err := archiver.Unarchive(file, dest); err != nil {
+		if err := extractRar(file, dest); err != nil {
 			log.Println("Error extracting rar:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
 		}
 	case contentType == "GZIP compressed file":
-		if err := extractRar(file, dest); err != nil {
+		if err := ExtractTarGz(file, dest); err != nil {
 			log.Println("Error extracting tar:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
