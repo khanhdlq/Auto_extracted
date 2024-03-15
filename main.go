@@ -5,11 +5,11 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -228,10 +228,51 @@ func checkFileType(file string) string {
 	return contentType
 }
 
+func processDir(path string, info os.FileInfo) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(files) != 0 {
+		return
+	}
+
+	err = os.Remove(path)
+	if err != nil {
+		panic(err)
+	}
+
+	// log.Print(path, "removed!")
+}
+func deleteEmptyFolder(folder string) {
+	for true {
+		time.Sleep(time.Second)
+		err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+			if path == folder {
+				return nil
+			}
+			if err != nil {
+				log.Printf("prevent panic by handling failure accessing a path %q: %v\n", path, err)
+				return err
+			}
+			if info.IsDir() {
+				processDir(path, info)
+			}
+
+			return nil
+		})
+		if err != nil {
+			panic(err)
+			return
+		}
+	}
+}
+
 // =========================================================================================================== Untar files
 func extract(file string, dest string) {
 	contentType := checkFileType(file)
-	color.Yellow("[+] Processing: " + file)
+	color.Green("[+] Processing: " + file)
 
 	switch contentType {
 	case "application/zip":
@@ -267,18 +308,17 @@ func extract(file string, dest string) {
 			color.Blue("[-] Moved successfully")
 		}
 	default:
-		color.Blue(file + " is a directory")
+		color.Red("[-] Invalid format")
 	}
 	fmt.Println()
+
 	// Remove the source file
 	if err := os.RemoveAll(file); err != nil {
 		log.Print(err)
 	}
 }
-
 func walkDir(fileName string) {
 	var files []string
-
 	err := filepath.Walk(fileName, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -286,10 +326,18 @@ func walkDir(fileName string) {
 		if path == fileName {
 			return nil
 		}
-		ext := filepath.Ext(path)
-		allowExts := regexp.MustCompile(`(?i)\.(zip|rar|7z|tar\.gz|tar|txt)`)
-		if info.IsDir() || allowExts.MatchString(ext) {
+		allowed := map[string]bool{
+			"application/x-rar-compressed": true,
+			"application/zip":              true,
+			"application/x-gzip":           true,
+			"application/x-7z-compressed":  true,
+			"text/plain; charset=utf-8":    true,
+		}
+
+		if _, ok := allowed[checkFileType(path)]; ok {
 			files = append(files, path)
+		} else {
+			color.Red("Not allowed " + path)
 		}
 		return nil
 	})
@@ -302,15 +350,14 @@ func walkDir(fileName string) {
 	for _, file := range files {
 		extract(file, "./extracted")
 	}
-
 }
 
 // =========================================================================================================== Extract files
 func main() {
-
 	walkDir("./files")
-	// =========================================================================================================== Walk first
-	color.Green("[+] Starting watcher -> [ ./files ]")
+	go deleteEmptyFolder("./files/")
+	// ======================================================================================================= Walk first
+	color.Yellow("[+] Starting watcher -> [ ./files ]")
 	w := watcher.New()
 
 	go func() {

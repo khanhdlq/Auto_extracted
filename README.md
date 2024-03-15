@@ -2,4 +2,4 @@
 
 ## Todo
 
-- Optimize handle when delete folder in watcher
+- Untar file tar and file .7z
