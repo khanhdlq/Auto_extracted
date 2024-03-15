@@ -194,7 +194,7 @@ func Untar(dst string, r io.Reader, sem *Semaphore, godeep bool) error {
 	}
 	return nil
 }
-func extractTar(tarFileName string, dstDir string) error {
+func extractRar(tarFileName string, dstDir string) error {
 	f, err := os.Open(tarFileName)
 	if err != nil {
 		return err
@@ -288,7 +288,7 @@ func extract(file string, dest string) {
 			color.Blue("[-] Extracted successfully")
 		}
 	case "application/x-gzip":
-		if err := extractTar(file, dest); err != nil {
+		if err := extractRar(file, dest); err != nil {
 			log.Println("Error extracting tar:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
@@ -338,6 +338,7 @@ func walkDir(fileName string) {
 			files = append(files, path)
 		} else {
 			color.Red("Not allowed " + path)
+			err = os.RemoveAll(path)
 		}
 		return nil
 	})
