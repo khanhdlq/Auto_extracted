@@ -11,6 +11,8 @@ require (
 	github.com/dsnet/compress v0.0.1 // indirect
 	github.com/frankban/quicktest v1.14.6 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/kjk/lzmadec v0.0.0-20210713164611-19ac3ee91a71 // indirect
+	github.com/liamg/magic v0.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/nwaples/rardecode v1.1.3 // indirect

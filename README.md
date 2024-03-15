@@ -2,4 +2,4 @@
 
 ## Todo
 
-- Untar file tar and file .7z
+- Untar file `tar`

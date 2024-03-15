@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,11 +14,12 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/kjk/lzmadec"
+	"github.com/liamg/magic"
 	"github.com/mholt/archiver"
 	"github.com/radovskyb/watcher"
 )
 
-// func Unzip giải nén một tệp nén zip vào một thư mục đích đã chỉ định.
 func Unzip(file, dest string) error {
 	reader, err := zip.OpenReader(file)
 	if err != nil {
@@ -100,10 +100,7 @@ func Unzip(file, dest string) error {
 	}
 
 	return nil
-}
-
-// =========================================================================================================== Unzip files
-
+} // =========================================================================================================== Extract zip
 type Semaphore struct {
 	Wg sync.WaitGroup
 	Ch chan int
@@ -209,23 +206,45 @@ func extractRar(tarFileName string, dstDir string) error {
 
 	sem.Wg.Wait()
 	return nil
-}
-func checkFileType(file string) string {
-	fileHandle, err := os.Open(file)
+} // =========================================================================================================== Extract Rar
+func Extract_7z(path string, dstDir string) error {
+	a, err := lzmadec.NewArchive(path)
 	if err != nil {
-		fmt.Println("Error opening file:", err)
+		return err
+	}
+	for _, e := range a.Entries {
+		err = a.ExtractToFile(dstDir+"/"+e.Path, e.Path)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+} // =========================================================================================================== Extract 7z
+func checkFileType(path string) string {
+	file, err := os.Open(path) // Open the file
+	if err != nil {
+		fmt.Println("Error:", err)
 		return ""
 	}
-	defer fileHandle.Close()
-	// Read the first 512 bytes to determine the file type
+	defer file.Close()
+
 	buffer := make([]byte, 512)
-	_, err = fileHandle.Read(buffer)
+	_, err = io.ReadFull(file, buffer) // Read the first 512 bytes from the file
 	if err != nil {
-		fmt.Println("Error reading file:", err)
+		fmt.Println("Error:", err)
+		return ""
 	}
-	// Determine the content type based on the magic number
-	contentType := http.DetectContentType(buffer)
-	return contentType
+
+	fileType, err := magic.Lookup(buffer) // Lookup file type
+	if err != nil {
+		if err == magic.ErrUnknown {
+			fmt.Println("File type is unknown")
+			return ""
+		} else {
+			panic(err)
+		}
+	}
+	return fileType.Description
 }
 
 func processDir(path string, info os.FileInfo) {
@@ -242,7 +261,6 @@ func processDir(path string, info os.FileInfo) {
 	if err != nil {
 		panic(err)
 	}
-
 	// log.Print(path, "removed!")
 }
 func deleteEmptyFolder(folder string) {
@@ -268,38 +286,36 @@ func deleteEmptyFolder(folder string) {
 		}
 	}
 }
-
-// =========================================================================================================== Untar files
 func extract(file string, dest string) {
 	contentType := checkFileType(file)
 	color.Green("[+] Processing: " + file)
 
-	switch contentType {
-	case "application/zip":
+	switch {
+	case strings.Contains(contentType, "zip file format"):
 		if err := Unzip(file, dest); err != nil {
 			log.Println("Error extracting zip:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
 		}
-	case "application/x-rar-compressed":
+	case strings.Contains(contentType, "RAR archive"):
 		if err := archiver.Unarchive(file, dest); err != nil {
 			log.Println("Error extracting rar:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
 		}
-	case "application/x-gzip":
+	case contentType == "GZIP compressed file":
 		if err := extractRar(file, dest); err != nil {
 			log.Println("Error extracting tar:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
 		}
-	case "application/x-7z-compressed":
-		if err := archiver.Unarchive(file, dest); err != nil {
+	case contentType == "7-Zip File Format":
+		if err := Extract_7z(file, dest); err != nil {
 			log.Println("Error extracting 7z:", err)
 		} else {
 			color.Blue("[-] Extracted successfully")
 		}
-	case "text/plain; charset=utf-8":
+	case strings.Contains(file, ".txt"):
 		err := os.Rename(file, dest+"/"+filepath.Base(file))
 		if err != nil {
 			log.Println(err)
@@ -316,7 +332,7 @@ func extract(file string, dest string) {
 	if err := os.RemoveAll(file); err != nil {
 		log.Print(err)
 	}
-}
+} // =========================================================================================================== Extract all files
 func walkDir(fileName string) {
 	var files []string
 	err := filepath.Walk(fileName, func(path string, info os.FileInfo, err error) error {
@@ -327,14 +343,13 @@ func walkDir(fileName string) {
 			return nil
 		}
 		allowed := map[string]bool{
-			"application/x-rar-compressed": true,
-			"application/zip":              true,
-			"application/x-gzip":           true,
-			"application/x-7z-compressed":  true,
-			"text/plain; charset=utf-8":    true,
+			"zip file format":      true,
+			"RAR archive":          true,
+			"GZIP compressed file": true,
+			"7-Zip File Format":    true,
 		}
 
-		if _, ok := allowed[checkFileType(path)]; ok {
+		if _, ok := allowed[checkFileType(path)]; ok || strings.Contains(path, ".txt") {
 			files = append(files, path)
 		} else {
 			color.Red("Not allowed " + path)
@@ -353,7 +368,6 @@ func walkDir(fileName string) {
 	}
 }
 
-// =========================================================================================================== Extract files
 func main() {
 	walkDir("./files")
 	go deleteEmptyFolder("./files/")
