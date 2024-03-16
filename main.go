@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -101,111 +102,26 @@ func Unzip(file, dest string) error {
 
 	return nil
 } // =========================================================================================================== Extract zip
-type Semaphore struct {
-	Wg sync.WaitGroup
-	Ch chan int
-}
-
-// Limit on the number of simultaneously running goroutines.
-// Depends on the number of processor cores, storage performance, amount of RAM, etc.
-const grMax = 10
-
-func saveFile(r io.Reader, target string, mode os.FileMode) error {
-	f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, mode)
-	if err != nil {
-		return err
+func Unrar(path string, dest string) {
+	// Check if the RAR file exists
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Fatalf("RAR file '%s' not found", path)
 	}
-	defer f.Close()
-
-	if _, err := io.Copy(f, r); err != nil {
-		return err
-	}
-
-	return nil
-}
-func Untar(dst string, r io.Reader, sem *Semaphore, godeep bool) error {
-
-	tr := tar.NewReader(r)
-
-	for {
-		header, err := tr.Next()
-
-		switch {
-		case err == io.EOF:
-			return nil
-		case err != nil:
-			return err
-		}
-
-		// the target location where the dir/file should be created
-		target := filepath.Join(dst, header.Name)
-
-		switch header.Typeflag {
-
-		// if its a dir and it doesn't exist create it
-		case tar.TypeDir:
-			if _, err := os.Stat(target); err != nil {
-				if err := os.MkdirAll(target, 0755); err != nil {
-					return err
-				}
-			}
-
-		// if it's a file create it
-		case tar.TypeReg:
-			if err := saveFile(tr, target, os.FileMode(header.Mode)); err != nil {
-				return err
-			}
-			ext := filepath.Ext(target)
-
-			// if it's tar file and we are on top level, extract it
-			if ext == ".tar" && godeep {
-				sem.Wg.Add(1)
-				// A buffered channel is used to limit the number of simultaneously running goroutines
-				sem.Ch <- 1
-				// the file is unpacked to a directory with the file name (without extension)
-				newDir := filepath.Join(dst, strings.TrimSuffix(header.Name, ".tar"))
-				if err := os.Mkdir(newDir, 0755); err != nil {
-					return err
-				}
-				go func(target string, newDir string, sem *Semaphore) {
-					log.Println("start goroutine, chan length:", len(sem.Ch))
-					log.Println("START:", target)
-					defer sem.Wg.Done()
-					defer func() { <-sem.Ch }()
-					// the internal tar file opens
-					ft, err := os.Open(target)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					defer ft.Close()
-					// the godeep parameter is false here to avoid unpacking archives inside the current archive.
-					if err := Untar(newDir, ft, sem, false); err != nil {
-						log.Println(err)
-						return
-					}
-					log.Println("DONE:", target)
-				}(target, newDir, sem)
-			}
+	// Create the destination directory if it doesn't exist
+	if _, err := os.Stat(dest); os.IsNotExist(err) {
+		if err := os.Mkdir(dest, 0755); err != nil {
+			log.Fatalf("Failed to create directory: %v", err)
 		}
 	}
-	return nil
-}
-func extractRar(tarFileName string, dstDir string) error {
-	f, err := os.Open(tarFileName)
+
+	// Execute unrar command
+	cmd := exec.Command("unrar", "x", path, dest)
+	err := cmd.Run()
 	if err != nil {
-		return err
+		log.Fatalf("Failed to unrar: %v", err)
+	} else {
+		color.Blue("[-] Extracted successfully")
 	}
-
-	sem := Semaphore{}
-	sem.Ch = make(chan int, grMax)
-
-	if err := Untar(dstDir, f, &sem, true); err != nil {
-		return err
-	}
-
-	sem.Wg.Wait()
-	return nil
 } // =========================================================================================================== Extract Rar
 func Extract_7z(path string, dstDir string) error {
 	a, err := lzmadec.NewArchive(path)
@@ -343,11 +259,7 @@ func extract(file string, dest string) {
 			color.Blue("[-] Extracted successfully")
 		}
 	case strings.Contains(contentType, "RAR archive"):
-		if err := extractRar(file, dest); err != nil {
-			log.Println("Error extracting rar:", err)
-		} else {
-			color.Blue("[-] Extracted successfully")
-		}
+		Unrar(file, dest)
 	case contentType == "GZIP compressed file":
 		if err := ExtractTarGz(file, dest); err != nil {
 			log.Println("Error extracting tar:", err)
@@ -409,7 +321,7 @@ func walkDir(fileName string) {
 	}
 
 	for _, file := range files {
-		extract(file, "./extracted")
+		extract(file, "./leaked")
 	}
 }
 
@@ -436,7 +348,8 @@ func main() {
 					// Check if it's a regular file
 					if fileInfo.Mode().IsRegular() {
 						// Handle here
-						extract(event.Path, "./extracted")
+						extract(event.Path, "./leaked")
+						time.Sleep(time.Millisecond * 4000)
 					}
 				}
 			case err := <-w.Error:
@@ -458,14 +371,13 @@ func main() {
 
 	// Trigger 2 events after watcher started.
 	go func() {
-		time.Sleep(time.Second)
 		w.Wait()
 		w.TriggerEvent(watcher.Create, nil)
 		w.TriggerEvent(watcher.Remove, nil)
 	}()
 
 	// Start the watching process - it'll check for changes every 100ms.
-	if err := w.Start(time.Millisecond * 1000); err != nil {
+	if err := w.Start(time.Millisecond * 100); err != nil {
 		log.Println(err)
 	}
 

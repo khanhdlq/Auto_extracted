@@ -3,10 +3,11 @@
 - Folder build:
 ```bash
 .
-├── extracted
+├── README.md
 ├── files
 ├── go.mod
 ├── go.sum
+├── leaked
 ├── main.go
-├── multiple_extract
+└── multiple_extract
 ```
